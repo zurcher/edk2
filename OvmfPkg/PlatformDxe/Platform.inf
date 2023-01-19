@@ -29,9 +29,11 @@
   MdePkg/MdePkg.dec
   MdeModulePkg/MdeModulePkg.dec
   OvmfPkg/OvmfPkg.dec
+  CryptoPkg/CryptoPkg.dec
 
 [LibraryClasses]
   BaseLib
+  BaseCryptLib
   BaseMemoryLib
   DebugLib
   DevicePathLib
@@ -53,12 +55,18 @@
   gEfiDevicePathProtocolGuid      ## PRODUCES
   gEfiGraphicsOutputProtocolGuid  ## CONSUMES
   gEfiHiiConfigAccessProtocolGuid ## PRODUCES
+  gEfiHash2ServiceBindingProtocolGuid
+  gEfiHash2ProtocolGuid
 
 [Guids]
   gEfiIfrTianoGuid
   gOvmfPlatformConfigGuid
+  gEfiHashAlgorithmSha1Guid
+  gEfiHashAlgorithmSha256Guid
+  gEfiHashAlgorithmSha512Guid
 
 [Depex]
+  gEfiHash2ServiceBindingProtocolGuid AND
   gEfiHiiConfigRoutingProtocolGuid  AND
   gEfiHiiDatabaseProtocolGuid       AND
   gEfiVariableArchProtocolGuid      AND

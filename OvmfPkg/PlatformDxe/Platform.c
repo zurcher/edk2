@@ -26,6 +26,176 @@
 #include "Platform.h"
 #include "PlatformConfig.h"
 
+#include <Uefi.h>
+#include <Library/BaseCryptLib.h>
+#include <Library/UefiRuntimeServicesTableLib.h>
+#include <Protocol/ServiceBinding.h>
+#include <Protocol/Hash2.h>
+
+VOID
+PrintCryptoBuffer (
+  UINTN  ErrorLevel,
+  UINT8  *Buffer,
+  UINTN  BufferSize
+  )
+{
+  UINTN  Index;
+
+  for (Index = 0; Index < BufferSize; Index++) {
+    DEBUG ((ErrorLevel, " %02X", Buffer[Index] & 0xFF));
+    if (!((Index + 1) % 0x20)) {
+      DEBUG ((ErrorLevel, "\n"));
+    }
+  }
+
+  DEBUG ((ErrorLevel, "\n"));
+}
+
+/**
+Benchmark UFS write speed and SHA 256 hashing for UFP (FFU)
+**/
+EFI_STATUS
+TestHash (
+  VOID
+  )
+{
+  EFI_STATUS  Status;
+  UINTN       Index;
+  UINT8       *TestData;
+
+  #define TEST_DATA_SIZE  0x20000
+
+  TestData = AllocatePool (TEST_DATA_SIZE);
+  if (TestData == NULL) {
+    DEBUG ((DEBUG_ERROR, "AllocatePool TestData failed\n"));
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  for (Index = 0; Index < TEST_DATA_SIZE; Index++) {
+    TestData[Index] = (UINT8)Index;
+  }
+
+ #if 1 // Hash
+
+  EFI_HANDLE                    Hash2Handle;
+  EFI_SERVICE_BINDING_PROTOCOL  *Hash2Service;
+  EFI_HASH2_PROTOCOL            *Hash2;
+  EFI_HASH2_OUTPUT              HashOutput;
+
+  DEBUG ((DEBUG_INFO, "Test Hashing\n"));
+
+  Status = gBS->LocateProtocol (&gEfiHash2ServiceBindingProtocolGuid, NULL, (VOID **)&Hash2Service);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Locate Hash2 Service Binding failed - %r\n", Status));
+    return Status;
+  }
+
+  Hash2Handle = NULL;
+  Status      = Hash2Service->CreateChild (Hash2Service, &Hash2Handle);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Hash2 CreateChild failed - %r\n", Status));
+    return Status;
+  }
+
+  Status = gBS->HandleProtocol (Hash2Handle, &gEfiHash2ProtocolGuid, (VOID **)&Hash2);
+  if (EFI_ERROR (Status)) {
+    DEBUG ((DEBUG_ERROR, "Handle Hash2 failed - %r\n", Status));
+    return Status;
+  }
+
+  DEBUG ((DEBUG_INFO, "Test block size is 0x%X (%d KB)\n", TEST_DATA_SIZE, TEST_DATA_SIZE/1024));
+
+  for (Index = 0; Index < 0x2000; Index++) {
+    // for (Index = 0; Index < 1; Index++) {
+    Status = Hash2->Hash (
+                      Hash2,
+                      // &gEfiHashAlgorithmSha1Guid,
+                      &gEfiHashAlgorithmSha256Guid,
+                      // &gEfiHashAlgorithmSha512Guid,
+                      TestData,
+                      TEST_DATA_SIZE,
+                      &HashOutput
+                      );
+    if (EFI_ERROR (Status)) {
+      DEBUG ((DEBUG_ERROR, "Hashing failed at Index %d - %r\n", Index, Status));
+      return Status;
+    }
+  }
+
+  DEBUG ((DEBUG_INFO, "Hash contents: (%d bytes)\n", sizeof (HashOutput.Sha256Hash)));
+  for (Index = 0; Index < sizeof (HashOutput.Sha256Hash); Index++) {
+    DEBUG ((DEBUG_INFO, "%02X", HashOutput.Sha256Hash[Index]));
+  }
+
+  DEBUG ((DEBUG_INFO, "\n"));
+ #endif
+
+ #if 1 // Encrypt
+
+  VOID   *AesContext;
+  UINT8  Key[32];        /* A 256 bit Key */
+  UINT8  InitVector[16]; /* A 128 bit Initialization Vector */
+  UINT8  *CipherText;    /* Buffer for CipherText */
+  UINT8  *DecryptedText; /* Buffer for the decrypted text */
+
+  DEBUG ((DEBUG_INFO, "Test AES\n"));
+
+  CopyMem (Key, "01234567890123456789012345678901", 32);
+  CopyMem (InitVector, "0123456789012345", 16);
+
+  CipherText = AllocatePool (TEST_DATA_SIZE);
+  if (CipherText == NULL) {
+    DEBUG ((DEBUG_ERROR, "AllocatePool CipherText failed\n"));
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  DecryptedText = AllocatePool (TEST_DATA_SIZE);
+  if (DecryptedText == NULL) {
+    DEBUG ((DEBUG_ERROR, "AllocatePool DecryptedText failed\n"));
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  AesContext = AllocatePool (AesGetContextSize ());
+  if (AesContext == NULL) {
+    DEBUG ((DEBUG_ERROR, "AllocatePool AesGetContextSize failed\n"));
+    return EFI_OUT_OF_RESOURCES;
+  }
+
+  if (!AesInit (AesContext, Key, 256)) {
+    DEBUG ((DEBUG_INFO, "Failed AesInit\n"));
+    return EFI_DEVICE_ERROR;
+  }
+
+  DEBUG ((DEBUG_INFO, "PlainText:\n"));
+  PrintCryptoBuffer (DEBUG_INFO, TestData, 0x100);
+
+  // for (Index = 0; Index < 0x2000; Index++) {
+  for (Index = 0; Index < 0x800; Index++) {
+    /* Encrypt the PlainText */
+    if (!AesCbcEncrypt (AesContext, TestData, TEST_DATA_SIZE, InitVector, CipherText)) {
+      DEBUG ((DEBUG_INFO, "Failed AesCbcEncrypt\n"));
+      return EFI_DEVICE_ERROR;
+    }
+
+    if (Index == 0) {
+      DEBUG ((DEBUG_INFO, "CipherText:\n"));
+      PrintCryptoBuffer (DEBUG_INFO, CipherText, 0x100);
+    }
+
+    /* Decrypt the CipherText */
+    if (!AesCbcDecrypt (AesContext, CipherText, TEST_DATA_SIZE, InitVector, DecryptedText)) {
+      DEBUG ((DEBUG_INFO, "Failed AesCbcDecrypt\n"));
+      return EFI_DEVICE_ERROR;
+    }
+  }
+
+  DEBUG ((DEBUG_INFO, "DecryptedText:\n"));
+  PrintCryptoBuffer (DEBUG_INFO, DecryptedText, 0x100);
+ #endif
+
+  return Status;
+}
+
 //
 // The HiiAddPackages() library function requires that any controller (or
 // image) handle, to be associated with the HII packages under installation, be
@@ -950,6 +1120,11 @@ PlatformInit (
   )
 {
   EFI_STATUS  Status;
+
+ #if 1
+  Status = TestHash ();
+  gRT->ResetSystem (EfiResetShutdown, Status, 0, NULL);
+ #endif
 
   ExecutePlatformConfig ();
 

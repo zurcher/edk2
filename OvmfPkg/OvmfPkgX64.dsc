@@ -103,6 +103,7 @@
   MSFT:*_*_*_CC_FLAGS = /D DISABLE_NEW_DEPRECATED_INTERFACES
   INTEL:*_*_*_CC_FLAGS = /D DISABLE_NEW_DEPRECATED_INTERFACES
   GCC:*_*_*_CC_FLAGS = -D DISABLE_NEW_DEPRECATED_INTERFACES
+  MSFT:*_*_*_DLINK_FLAGS = /ALIGN:256
 
   #
   # Add TDX_GUEST_SUPPORTED
@@ -235,7 +236,8 @@
 !if $(NETWORK_TLS_ENABLE) == TRUE
   OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLib.inf
 !else
-  OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLibCrypto.inf
+  OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLibAccel.inf
+  # OpensslLib|CryptoPkg/Library/OpensslLib/OpensslLib.inf
 !endif
   RngLib|MdePkg/Library/BaseRngLibTimerLib/BaseRngLibTimerLib.inf
 
@@ -1028,6 +1030,8 @@
   SecurityPkg/VariableAuthenticated/SecureBootConfigDxe/SecureBootConfigDxe.inf
   OvmfPkg/EnrollDefaultKeys/EnrollDefaultKeys.inf
 !endif
+
+  SecurityPkg/Hash2DxeCrypto/Hash2DxeCrypto.inf
 
   OvmfPkg/PlatformDxe/Platform.inf
   OvmfPkg/AmdSevDxe/AmdSevDxe.inf {
